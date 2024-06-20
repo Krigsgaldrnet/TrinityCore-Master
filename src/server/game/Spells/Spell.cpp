@@ -3611,7 +3611,8 @@ void Spell::cancel()
     {
         case SPELL_STATE_PREPARING:
             CancelGlobalCooldown();
-            [[fallthrough]];
+            SendCastResult(SPELL_FAILED_INTERRUPTED);
+            break;
         case SPELL_STATE_LAUNCHED:
             SendInterrupted(0);
             SendCastResult(SPELL_FAILED_INTERRUPTED);

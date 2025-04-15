@@ -11,11 +11,6 @@ Commit https://github.com/Krigsgaldrnet/TrinityCore-Master/commit/2beb472ae1bfa3
 in our repository
 corresponds to https://github.com/TrinityCore/TrinityCore/commit/fa75f635669df6f0aab4abef074f9e8da4b5bf06 on the original tree.
 
-
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
 [![Average time to resolve an issue](https://isitmaintained.com/badge/resolution/TrinityCore/TrinityCore.svg)](https://isitmaintained.com/project/TrinityCore/TrinityCore "Average time to resolve an issue") [![Percentage of issues still open](https://isitmaintained.com/badge/open/TrinityCore/TrinityCore.svg)](https://isitmaintained.com/project/TrinityCore/TrinityCore "Percentage of issues still open")
 
 --------------
@@ -35,22 +30,20 @@ corresponds to https://github.com/TrinityCore/TrinityCore/commit/fa75f635669df6f
 
 ## Build Status
 
-<<<<<<< Updated upstream
+
 
 master
-=======
->>>>>>> Stashed changes
+
 
 [![master Build Status](https://circleci.com/gh/TrinityCore/TrinityCore/tree/master.svg?style=shield)](https://circleci.com/gh/TrinityCore/TrinityCore/tree/master)
 [![master Build status](https://ci.appveyor.com/api/projects/status/54d0u1fxe50ad80o/branch/master?svg=true)](https://ci.appveyor.com/project/DDuarte/trinitycore/branch/master)
 ![master GCC Build status](https://github.com/TrinityCore/TrinityCore/actions/workflows/gcc-build.yml/badge.svg?branch=master&event=push)
 [![master macOS arm64 Build status](https://github.com/TrinityCore/TrinityCore/actions/workflows/macos-arm-build.yml/badge.svg?branch=master&event=push)](https://github.com/TrinityCore/TrinityCore/actions?query=workflow%3AGCC+branch%3Amaster+event%3Apush)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/435/badge.svg)](https://scan.coverity.com/projects/435)
-<<<<<<< Updated upstream
-=======
 
 
->>>>>>> Stashed changes
+
+
 
 ## Introduction
 

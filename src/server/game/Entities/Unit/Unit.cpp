@@ -267,12 +267,12 @@ uint32 HealInfo::GetHitMask() const
     return _hitMask;
 }
 
-ProcEventInfo::ProcEventInfo(Unit* actor, Unit* actionTarget, Unit* procTarget,
+ProcEventInfo::ProcEventInfo(Unit* actor, Unit* actionTarget,
                              ProcFlagsInit const& typeMask, ProcFlagsSpellType spellTypeMask,
                              ProcFlagsSpellPhase spellPhaseMask, ProcFlagsHit hitMask,
                              Spell* spell, DamageInfo* damageInfo,
                              HealInfo* healInfo) :
-    _actor(actor), _actionTarget(actionTarget), _procTarget(procTarget),
+    _actor(actor), _actionTarget(actionTarget),
     _typeMask(typeMask), _spellTypeMask(spellTypeMask),
     _spellPhaseMask(spellPhaseMask), _hitMask(hitMask), _spell(spell),
     _damageInfo(damageInfo), _healInfo(healInfo)
@@ -2096,6 +2096,8 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             log.damage = splitDamage;
             log.originalDamage = splitDamage;
             log.absorb = split_absorb;
+            log.periodicLog = damageInfo.GetDamageType() == DOT;
+            log.HitInfo |= SPELL_HIT_TYPE_SPLIT;
             caster->SendSpellNonMeleeDamageLog(&log);
 
             // break 'Fear' and similar auras
@@ -2556,16 +2558,12 @@ void Unit::SendMeleeAttackStart(Unit* victim)
     SendMessageToSet(packet.Write(), true);
 }
 
-void Unit::SendMeleeAttackStop(Unit* victim)
+void Unit::SendMeleeAttackStop(Unit const* victim) const
 {
     WorldPackets::Combat::SAttackStop attackStop;
     attackStop.Attacker = GetGUID();
-    if (victim)
-    {
-        attackStop.Victim = victim->GetGUID();
-        attackStop.NowDead = !victim->IsAlive();
-    }
-
+    attackStop.Victim = Object::GetGUID(victim);
+    attackStop.NowDead = !IsAlive();
     SendMessageToSet(attackStop.Write(), true);
 
     if (victim)
@@ -4297,7 +4295,7 @@ void Unit::RemoveMovementImpairingAuras(bool withRoot)
     if (withRoot)
         RemoveAurasWithMechanic(1 << MECHANIC_ROOT, AURA_REMOVE_BY_DEFAULT, 0, true);
 
-    RemoveAurasWithMechanic(1 << MECHANIC_SNARE, AURA_REMOVE_BY_DEFAULT, 0, false);
+    RemoveAurasWithMechanic(1 << MECHANIC_SNARE, AURA_REMOVE_BY_DEFAULT, 0, true);
 }
 
 void Unit::RemoveAurasWithMechanic(uint64 mechanicMaskToRemove, AuraRemoveMode removeMode, uint32 exceptSpellId, bool withEffectMechanics)
@@ -9256,6 +9254,12 @@ void Unit::AtExitCombat()
         UpdateNearbyPlayersInteractions();
 }
 
+void Unit::AtEngage(Unit* /*target*/)
+{
+    if (HasUnitState(UNIT_STATE_DISTRACTED))
+        GetMotionMaster()->Remove(DISTRACT_MOTION_TYPE);
+}
+
 void Unit::AtTargetAttacked(Unit* target, bool canInitialAggro)
 {
     if (!target->IsEngaged() && !canInitialAggro)
@@ -10578,7 +10582,7 @@ void Unit::TriggerAurasProcOnEvent(AuraApplicationList* myProcAuras, AuraApplica
                                    ProcFlagsSpellPhase spellPhaseMask, ProcFlagsHit hitMask, Spell* spell, DamageInfo* damageInfo, HealInfo* healInfo)
 {
     // prepare data for self trigger
-    ProcEventInfo myProcEventInfo(this, actionTarget, actionTarget, typeMaskActor, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
+    ProcEventInfo myProcEventInfo(this, actionTarget, typeMaskActor, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
     AuraApplicationProcContainer myAurasTriggeringProc;
     if (typeMaskActor)
     {
@@ -10601,7 +10605,7 @@ void Unit::TriggerAurasProcOnEvent(AuraApplicationList* myProcAuras, AuraApplica
     }
 
     // prepare data for target trigger
-    ProcEventInfo targetProcEventInfo(this, actionTarget, this, typeMaskActionTarget, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
+    ProcEventInfo targetProcEventInfo(this, actionTarget, typeMaskActionTarget, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
     AuraApplicationProcContainer targetAurasTriggeringProc;
     if (typeMaskActionTarget && actionTarget)
         actionTarget->GetProcAurasTriggeredOnEvent(targetAurasTriggeringProc, targetProcAuras, targetProcEventInfo);
@@ -10637,7 +10641,7 @@ void Unit::TriggerAurasProcOnEvent(ProcEventInfo& eventInfo, AuraApplicationProc
 }
 
 ///----------Pet responses methods-----------------
-void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId)
+void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId) const
 {
     Unit* owner = GetOwner();
     if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
@@ -10649,19 +10653,24 @@ void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId)
     owner->ToPlayer()->SendDirectMessage(petActionFeedback.Write());
 }
 
-void Unit::SendPetTalk(uint32 pettalk)
+void Unit::SendPetActionSound(PetAction action) const
 {
-    Unit* owner = GetOwner();
-    if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
-        return;
-
     WorldPackets::Pet::PetActionSound petActionSound;
     petActionSound.UnitGUID = GetGUID();
-    petActionSound.Action = pettalk;
-    owner->ToPlayer()->SendDirectMessage(petActionSound.Write());
+    petActionSound.Action = action;
+    SendMessageToSet(petActionSound.Write(), false);
 }
 
-void Unit::SendPetAIReaction(ObjectGuid guid)
+void Unit::SendPetDismissSound() const
+{
+    WorldPackets::Pet::PetDismissSound petDismissSound;
+    petDismissSound.UnitGUID = GetGUID();
+    petDismissSound.CreatureDisplayInfoID = GetNativeDisplayId();
+    petDismissSound.ModelPosition = GetPosition();
+    SendMessageToSet(petDismissSound.Write(), false);
+}
+
+void Unit::SendPetAIReaction(ObjectGuid guid) const
 {
     Unit* owner = GetOwner();
     if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
@@ -10685,19 +10694,19 @@ MovementGeneratorType Unit::GetDefaultMovementType() const
     return IDLE_MOTION_TYPE;
 }
 
-void Unit::StopMoving()
+void Unit::StopMoving(bool force /*= false*/)
 {
     ClearUnitState(UNIT_STATE_MOVING);
 
     // not need send any packets if not in world or not moving
-    if (!IsInWorld() || movespline->Finalized())
+    if (!IsInWorld() || (!force && movespline->Finalized()))
         return;
 
     // Update position now since Stop does not start a new movement that can be updated later
     if (movespline->HasStarted())
         UpdateSplinePosition();
     Movement::MoveSplineInit init(this);
-    init.Stop();
+    init.Stop(force);
 }
 
 void Unit::PauseMovement(uint32 timer/* = 0*/, uint8 slot/* = 0*/, bool forced/* = true*/)
@@ -11867,6 +11876,7 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
 
     // Set charmed
     charmer->SetCharm(this, true);
+    m_combatManager.RevalidateCombat();
 
     if (Player* player = ToPlayer())
     {
@@ -11981,6 +11991,14 @@ void Unit::RemoveCharmedBy(Unit* charmer)
     }
     else
         RestoreFaction();
+
+    if (type != CHARM_TYPE_CHARM && !IsPlayer())
+    {
+        StopMoving(true);
+
+        // Purge flags left over by client control
+        m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_MASK_MOVING | MOVEMENTFLAG_MASK_TURNING);
+    }
 
     ///@todo Handle SLOT_IDLE motion resume
     GetMotionMaster()->InitializeDefault();
@@ -12966,11 +12984,12 @@ bool Unit::CanSwim() const
 
 void Unit::NearTeleportTo(TeleportLocation const& target, bool casting)
 {
-    DisableSpline();
-    if (GetTypeId() == TYPEID_PLAYER)
-        ToPlayer()->TeleportTo(target, TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | (casting ? TELE_TO_SPELL : TELE_TO_NONE));
+    if (Player* player = ToPlayer())
+        player->TeleportTo(target, TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | (casting ? TELE_TO_SPELL : TELE_TO_NONE));
     else
     {
+        DisableSpline();
+        GetMotionMaster()->InterruptOnTeleport();
         SendTeleportPacket(target);
         UpdatePosition(target.Location, true);
         UpdateObjectVisibility();
@@ -12991,7 +13010,6 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
     moveUpdateTeleport.Status = &m_movementInfo;
     if (_movementForces)
         moveUpdateTeleport.MovementForces = _movementForces->GetForces();
-    Unit* broadcastSource = this;
 
     // should this really be the unit _being_ moved? not the unit doing the moving?
     if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
@@ -13004,14 +13022,15 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
         moveTeleport.SequenceIndex = m_movementCounter++;
         playerMover->SendDirectMessage(moveTeleport.Write());
 
-        broadcastSource = playerMover;
+        // Broadcast the packet to everyone except self.
+        SendMessageToSet(moveUpdateTeleport.Write(), playerMover);
     }
     else
     {
         // This is the only packet sent for creatures which contains MovementInfo structure
         // we do not update m_movementInfo for creatures so it needs to be done manually here
         moveUpdateTeleport.Status->guid = GetGUID();
-        moveUpdateTeleport.Status->time = getMSTime();
+        moveUpdateTeleport.Status->time = GameTime::GetGameTimeMS();
 
         if (teleportLocation.TransportGuid)
         {
@@ -13027,10 +13046,9 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
             moveUpdateTeleport.Status->pos.Relocate(teleportLocation.Location);
             moveUpdateTeleport.Status->transport.Reset();
         }
-    }
 
-    // Broadcast the packet to everyone except self.
-    broadcastSource->SendMessageToSet(moveUpdateTeleport.Write(), false);
+        SendMessageToSet(moveUpdateTeleport.Write(), true);
+    }
 }
 
 bool Unit::UpdatePosition(float x, float y, float z, float orientation, bool teleport)
@@ -13295,39 +13313,22 @@ void Unit::SetInFront(WorldObject const* target)
         SetOrientation(GetAbsoluteAngle(target));
 }
 
-void Unit::SetFacingTo(float ori, bool force)
+void Unit::SetFacingTo(float ori, bool force /*= true*/, uint32 movementId /*= EVENT_FACE*/)
 {
     // do not face when already moving
     if (!force && (!IsStopped() || !movespline->Finalized()))
         return;
 
-    Movement::MoveSplineInit init(this);
-    init.MoveTo(GetPositionX(), GetPositionY(), GetPositionZ(), false);
-    if (GetTransport())
-        init.DisableTransportPathTransformations(); // It makes no sense to target global orientation
-    init.SetFacing(ori);
-
-    //GetMotionMaster()->LaunchMoveSpline(std::move(init), EVENT_FACE, MOTION_PRIORITY_HIGHEST);
-    UpdateSplineMovement(init.Launch());
-    if (Creature* creature = ToCreature())
-        creature->AI()->MovementInform(EFFECT_MOTION_TYPE, EVENT_FACE);
+    GetMotionMaster()->MoveFace(ori, movementId);
 }
 
-void Unit::SetFacingToObject(WorldObject const* object, bool force)
+void Unit::SetFacingToObject(WorldObject const* object, bool force /*= true*/, uint32 movementId /*= EVENT_FACE*/)
 {
     // do not face when already moving
     if (!force && (!IsStopped() || !movespline->Finalized()))
         return;
 
-    /// @todo figure out under what conditions creature will move towards object instead of facing it where it currently is.
-    Movement::MoveSplineInit init(this);
-    init.MoveTo(GetPositionX(), GetPositionY(), GetPositionZ(), false);
-    init.SetFacing(GetAbsoluteAngle(object));   // when on transport, GetAbsoluteAngle will still return global coordinates (and angle) that needs transforming
-
-    //GetMotionMaster()->LaunchMoveSpline(std::move(init), EVENT_FACE, MOTION_PRIORITY_HIGHEST);
-    UpdateSplineMovement(init.Launch());
-    if (Creature* creature = ToCreature())
-        creature->AI()->MovementInform(EFFECT_MOTION_TYPE, EVENT_FACE);
+    GetMotionMaster()->MoveFace(object, movementId);
 }
 
 void Unit::SetFacingToPoint(Position const& point, bool force)

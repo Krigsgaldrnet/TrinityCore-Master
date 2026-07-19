@@ -213,6 +213,9 @@ void AddSC_boss_the_curator_rtk();
 void AddSC_boss_mana_devourer();
 void AddSC_boss_shade_of_medivh();
 
+// Vashjir
+void AddSC_vashjir();
+
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddEasternKingdomsScripts()
@@ -414,4 +417,7 @@ void AddEasternKingdomsScripts()
     AddSC_boss_the_curator_rtk();
     AddSC_boss_mana_devourer();
     AddSC_boss_shade_of_medivh();
+
+    // Vashjir
+    AddSC_vashjir();
 }

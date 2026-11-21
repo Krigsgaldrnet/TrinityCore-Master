@@ -1614,7 +1614,20 @@ class TC_GAME_API ObjectMgr
             return nullptr;
         }
 
-        GossipMenuItemsAddon const* GetGossipMenuItemAddon(uint32 menuId, uint32 orderIndex);
+        GossipMenuItemsAddon const* GetGossipMenuItemAddon(uint32 menuId, uint32 orderIndex)
+        {
+            Trinity::IteratorPair<GossipMenuItemsAddonContainer::iterator> bounds = Trinity::Containers::MapEqualRange(_gossipMenuItemsAddonStore, menuId);
+
+            auto itr = std::ranges::find(bounds, orderIndex, [](std::pair<uint32 const, GossipMenuItemsAddon> const& itemPair)
+            {
+                return itemPair.second.OrderIndex;
+            });
+
+            if (itr == bounds.end())
+                return nullptr;
+
+            return &itr->second;
+        }
 
         // for wintergrasp only
         GraveyardContainer GraveyardStore;

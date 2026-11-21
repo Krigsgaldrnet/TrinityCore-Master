@@ -239,21 +239,6 @@ ObjectMgr::~ObjectMgr()
 {
 }
 
-GossipMenuItemsAddon const* ObjectMgr::GetGossipMenuItemAddon(uint32 menuId, uint32 orderIndex)
-{
-    Trinity::IteratorPair<GossipMenuItemsAddonContainer::iterator> bounds = Trinity::Containers::MapEqualRange(_gossipMenuItemsAddonStore, menuId);
-
-    auto itr = std::ranges::find(bounds, orderIndex, [](std::pair<uint32 const, GossipMenuItemsAddon> const& itemPair)
-    {
-        return itemPair.second.OrderIndex;
-    });
-
-    if (itr == bounds.end())
-        return nullptr;
-
-    return &itr->second;
-}
-
 void ObjectMgr::AddLocaleString(std::string_view value, LocaleConstant localeConstant, std::vector<std::string>& data)
 {
     if (data.size() <= size_t(localeConstant))
@@ -6425,7 +6410,7 @@ void ObjectMgr::ReturnOrDeleteOldMails(bool serverUp)
         m->expire_time    = fields[5].GetInt64();
         m->deliver_time   = 0;
         m->COD            = fields[6].GetUInt64();
-        m->checked        = fields[7].GetUInt8();
+        m->checked        = fields[7].GetUInt32();
         m->mailTemplateId = fields[8].GetInt16();
 
         // Delete or return mail
@@ -6435,7 +6420,7 @@ void ObjectMgr::ReturnOrDeleteOldMails(bool serverUp)
             m->items.swap(itemsCache[m->messageID]);
 
             // if it is mail from non-player, or if it's already return mail, it shouldn't be returned, but deleted
-            if (m->messageType != MAIL_NORMAL || (m->checked & (MAIL_CHECK_MASK_COD_PAYMENT | MAIL_CHECK_MASK_RETURNED)))
+            if (m->messageType != MAIL_NORMAL || (m->checked & (MAIL_CHECK_MASK_COD_PAYMENT | MAIL_CHECK_MASK_RETURNED | MAIL_CHECK_MASK_NOT_RETURNABLE)))
             {
                 CharacterDatabaseTransaction nonTransactional(nullptr);
                 // mail open and then not returned
@@ -6893,7 +6878,8 @@ WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyard(WorldLocation const& lo
     {
         if (z > -500)
         {
-            TC_LOG_ERROR("misc", "ZoneId not found for map {} coords ({}, {}, {})", MapId, x, y, z);
+            TC_LOG_ERROR("misc", "ZoneId not found for map {} coords ({}, {}, {}), object name: {} {}", MapId, x, y, z,
+                conditionObject ? std::string_view(conditionObject->GetName()) : "", Object::GetGUID(conditionObject));
             return GetDefaultGraveyard(team);
         }
     }
@@ -9810,22 +9796,10 @@ void ObjectMgr::LoadGossipMenuItemsAddon()
         gMenuItemAddon.OrderIndex       = fields[1].GetUInt32();
         gMenuItemAddon.DefaultAction    = GossipOptionDefaultAction(fields[1].GetUInt8());
 
-        Trinity::IteratorPair<GossipMenuItemsContainer::iterator> bounds = Trinity::Containers::MapEqualRange(_gossipMenuItemsStore,  gMenuItemAddon.MenuID);
-        auto itr = std::ranges::find(bounds, gMenuItemAddon.OrderIndex, [](std::pair<uint32 const, GossipMenuItems> const& itemPair)
-        {
-            return itemPair.second.OrderIndex;
-        });
-
-        if (itr == bounds.end())
-        {
-            TC_LOG_ERROR("sql.sql", "Table `gossip_menu_option_addon` for menu {}, id {} contains no parent entry in table `gossip_menu_option`, ignoring.", gMenuItemAddon.MenuID, gMenuItemAddon.OrderIndex);
-            continue;
-        }
-
         if (gMenuItemAddon.DefaultAction > GossipOptionDefaultAction::GossipBeginsPetBattle)
         {
             TC_LOG_ERROR("sql.sql", "Table `gossip_menu_option_addon` for menu {}, id {} has an undefined DefaultAction ({}), ignoring.", gMenuItemAddon.MenuID, gMenuItemAddon.OrderIndex, gMenuItemAddon.DefaultAction);
-            continue;
+            gMenuItemAddon.DefaultAction = GossipOptionDefaultAction::PlayerCastSpellOnThemselves;
         }
 
         _gossipMenuItemsAddonStore.insert(GossipMenuItemsAddonContainer::value_type(gMenuItemAddon.MenuID, gMenuItemAddon));

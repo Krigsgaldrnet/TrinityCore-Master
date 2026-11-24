@@ -70,6 +70,9 @@ WorldSocket::WorldSocket(Trinity::Net::IoContextTcpSocket&& socket) : BaseSocket
 
 WorldSocket::~WorldSocket()
 {
+    while (EncryptablePacket* queuedPacket = _bufferQueue.Dequeue())
+        delete queuedPacket;
+
     if (_compressionStream)
     {
         deflateEnd(_compressionStream);
@@ -201,35 +204,38 @@ bool WorldSocket::InitializeCompression()
 
 bool WorldSocket::Update()
 {
-    EncryptablePacket* queued;
-    MessageBuffer buffer(_sendBufferSize);
-    while (_bufferQueue.Dequeue(queued))
+    if (EncryptablePacket* queued = _bufferQueue.Dequeue())
     {
-        uint32 packetSize = queued->size() + 4 /*opcode*/;
-        if (packetSize > MinSizeForCompression && queued->NeedsEncryption())
-            packetSize = deflateBound(_compressionStream, packetSize) + sizeof(CompressedWorldPacket);
-
-        // Flush current buffer if too small for next packet
-        if (buffer.GetRemainingSpace() < packetSize + sizeof(PacketHeader))
+        // Allocate buffer only when it's needed but not on every Update() call.
+        MessageBuffer buffer(_sendBufferSize);
+        do
         {
+            uint32 packetSize = queued->size() + 4 /*opcode*/;
+            if (packetSize > MinSizeForCompression && queued->NeedsEncryption())
+                packetSize = deflateBound(_compressionStream, packetSize) + sizeof(CompressedWorldPacket);
+
+            // Flush current buffer if too small for next packet
+            if (buffer.GetRemainingSpace() < packetSize + sizeof(PacketHeader))
+            {
+                QueuePacket(std::move(buffer));
+                buffer.Resize(_sendBufferSize);
+            }
+
+            if (buffer.GetRemainingSpace() >= packetSize + sizeof(PacketHeader))
+                WritePacketToBuffer(*queued, buffer);
+            else    // single packet larger than _sendBufferSize
+            {
+                MessageBuffer packetBuffer(packetSize + sizeof(PacketHeader));
+                WritePacketToBuffer(*queued, packetBuffer);
+                QueuePacket(std::move(packetBuffer));
+            }
+
+            delete queued;
+        } while ((queued = _bufferQueue.Dequeue()));
+
+        if (buffer.GetActiveSize() > 0)
             QueuePacket(std::move(buffer));
-            buffer.Resize(_sendBufferSize);
-        }
-
-        if (buffer.GetRemainingSpace() >= packetSize + sizeof(PacketHeader))
-            WritePacketToBuffer(*queued, buffer);
-        else    // single packet larger than _sendBufferSize
-        {
-            MessageBuffer packetBuffer(packetSize + sizeof(PacketHeader));
-            WritePacketToBuffer(*queued, packetBuffer);
-            QueuePacket(std::move(packetBuffer));
-        }
-
-        delete queued;
     }
-
-    if (buffer.GetActiveSize() > 0)
-        QueuePacket(std::move(buffer));
 
     if (!BaseSocket::Update())
         return false;
